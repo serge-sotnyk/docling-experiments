@@ -53,7 +53,7 @@ def main(pdf_path: Path, verbose: bool, disable_logging: bool) -> None:
         click.echo(f"✅ Successfully converted PDF to Markdown: {output_path}")
         
         if enable_logging:
-            json_path = pdf_path.with_suffix('.json')
+            _, json_path = converter._generate_output_paths(pdf_path)
             click.echo(f"📊 Processing details saved to: {json_path}")
         
     except FileNotFoundError as e:

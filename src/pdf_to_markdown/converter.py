@@ -14,14 +14,16 @@ from .logger import ProcessingLogger
 class PDFToMarkdownConverter:
     """Converts PDF documents to Markdown using Docling with EasyOCR."""
     
-    def __init__(self, enable_logging: bool = True) -> None:
+    def __init__(self, enable_logging: bool = True, ocr_languages: list[str] | None = None) -> None:
         """
         Initialize the converter with Docling pipeline and EasyOCR configuration.
         
         Args:
             enable_logging: Whether to enable processing details logging
+            ocr_languages: List of OCR languages to use (defaults to ["en"])
         """
         self.enable_logging = enable_logging
+        self.ocr_languages = ocr_languages or ["en"]
         self.logger = ProcessingLogger() if enable_logging else None
         
         # Configure PDF pipeline with OCR enabled
@@ -34,6 +36,66 @@ class PDFToMarkdownConverter:
                 InputFormat.PDF: PdfFormatOption(pipeline_options=pipeline_options)
             }
         )
+    
+    @staticmethod
+    def _generate_output_paths(pdf_path: Path) -> tuple[Path, Path]:
+        """
+        Generate consistent output paths for markdown and JSON files.
+        
+        Args:
+            pdf_path: Path to the input PDF file
+            
+        Returns:
+            Tuple of (markdown_output_path, json_output_path)
+        """
+        markdown_output_path = pdf_path.with_suffix(pdf_path.suffix + '.md')
+        json_output_path = pdf_path.with_suffix('.json')
+        return markdown_output_path, json_output_path
+    
+    def _validate_pdf_input(self, pdf_path: Path) -> None:
+        """
+        Validate PDF input file.
+        
+        Args:
+            pdf_path: Path to the PDF file to validate
+            
+        Raises:
+            FileNotFoundError: If the PDF file doesn't exist
+            ValueError: If the file is not a PDF
+        """
+        if not pdf_path.exists():
+            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
+        
+        if pdf_path.suffix.lower() != '.pdf':
+            raise ValueError(f"File must be a PDF: {pdf_path}")
+    
+    def _convert_pdf_core(self, pdf_path: Path) -> tuple[str, Any, DoclingDocument]:
+        """
+        Core PDF conversion logic.
+        
+        Args:
+            pdf_path: Path to the PDF file to convert
+            
+        Returns:
+            Tuple of (markdown_content, conversion_result, document)
+            
+        Raises:
+            RuntimeError: If conversion fails
+        """
+        try:
+            # Convert PDF using Docling
+            result = self.doc_converter.convert(pdf_path)
+            
+            # Extract the document
+            doc: DoclingDocument = result.document
+            
+            # Export to Markdown
+            markdown_content = doc.export_to_markdown()
+            
+            return markdown_content, result, doc
+            
+        except Exception as e:
+            raise RuntimeError(f"Failed to convert PDF to Markdown: {e}") from e
     
     def convert_pdf_to_markdown(self, pdf_path: Path) -> str:
         """
@@ -50,27 +112,9 @@ class PDFToMarkdownConverter:
             ValueError: If the file is not a PDF
             RuntimeError: If conversion fails
         """
-        # Validate input file
-        if not pdf_path.exists():
-            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-        
-        if pdf_path.suffix.lower() != '.pdf':
-            raise ValueError(f"File must be a PDF: {pdf_path}")
-        
-        try:
-            # Convert PDF using Docling
-            result = self.doc_converter.convert(pdf_path)
-            
-            # Extract the document
-            doc: DoclingDocument = result.document
-            
-            # Export to Markdown
-            markdown_content = doc.export_to_markdown()
-            
-            return markdown_content
-            
-        except Exception as e:
-            raise RuntimeError(f"Failed to convert PDF to Markdown: {e}") from e
+        self._validate_pdf_input(pdf_path)
+        markdown_content, _, _ = self._convert_pdf_core(pdf_path)
+        return markdown_content
     
     def save_markdown(self, content: str, output_path: Path) -> None:
         """
@@ -111,36 +155,25 @@ class PDFToMarkdownConverter:
             RuntimeError: If conversion fails
         """
         # Validate input file
-        if not pdf_path.exists():
-            raise FileNotFoundError(f"PDF file not found: {pdf_path}")
-        
-        if pdf_path.suffix.lower() != '.pdf':
-            raise ValueError(f"File must be a PDF: {pdf_path}")
+        self._validate_pdf_input(pdf_path)
         
         # Start timing if logging is enabled
         if self.logger:
             self.logger.start_timing()
         
-        try:
-            # Convert PDF using Docling
-            result = self.doc_converter.convert(pdf_path)
-            
-            # Extract the document
-            doc: DoclingDocument = result.document
-            
-            # Export to Markdown
-            markdown_content = doc.export_to_markdown()
-            
-            # Stop timing if logging is enabled
-            if self.logger:
+        # Perform core conversion
+        markdown_content, result, doc = self._convert_pdf_core(pdf_path)
+        
+        # Handle logging if enabled
+        if self.logger:
+            try:
                 processing_duration = self.logger.stop_timing()
                 
                 # Extract metadata
                 document_metadata = self.logger.extract_metadata(result, doc, pdf_path)
                 
                 # Generate output paths
-                markdown_output_path = pdf_path.with_suffix(pdf_path.suffix + '.md')
-                json_output_path = pdf_path.with_suffix('.json')
+                markdown_output_path, json_output_path = self._generate_output_paths(pdf_path)
                 
                 # Create log entry
                 log_data = self.logger.create_log_entry(
@@ -149,16 +182,18 @@ class PDFToMarkdownConverter:
                     verbose=verbose,
                     command_line=command_line,
                     document_metadata=document_metadata,
-                    processing_duration=processing_duration
+                    processing_duration=processing_duration,
+                    ocr_languages=self.ocr_languages
                 )
                 
                 # Save processing log
                 self.logger.save_processing_log(log_data, json_output_path)
-            
-            return markdown_content, result, doc
-            
-        except Exception as e:
-            raise RuntimeError(f"Failed to convert PDF to Markdown: {e}") from e
+            except Exception as e:
+                # Log the error but don't fail the conversion
+                import sys
+                print(f"⚠️  Warning: Failed to save processing log: {e}", file=sys.stderr)
+        
+        return markdown_content, result, doc
     
     def convert_and_save(
         self, 
@@ -191,7 +226,7 @@ class PDFToMarkdownConverter:
             markdown_content = self.convert_pdf_to_markdown(pdf_path)
         
         # Generate output filename by appending .md to original PDF name
-        output_path = pdf_path.with_suffix(pdf_path.suffix + '.md')
+        output_path, _ = self._generate_output_paths(pdf_path)
         
         # Save Markdown content
         self.save_markdown(markdown_content, output_path)

@@ -73,7 +73,8 @@ class ProcessingLogger:
         verbose: bool,
         command_line: str,
         document_metadata: dict[str, Any],
-        processing_duration: float
+        processing_duration: float,
+        ocr_languages: list[str] | None = None
     ) -> dict[str, Any]:
         """
         Create complete log entry structure.
@@ -85,6 +86,7 @@ class ProcessingLogger:
             command_line: Original command line invocation
             document_metadata: Document metadata dictionary
             processing_duration: Processing time in seconds
+            ocr_languages: List of OCR languages used
             
         Returns:
             Complete log entry as dictionary
@@ -104,7 +106,7 @@ class ProcessingLogger:
         utility_parameters = {
             "input_file": str(pdf_path),
             "output_file": str(output_path),
-            "ocr_languages": ["en"],  # Default OCR language
+            "ocr_languages": ocr_languages or ["en"],
             "verbose_mode": verbose,
             "command_line": command_line
         }
