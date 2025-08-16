@@ -1,8 +1,7 @@
-"""Command-line interface for PDF to Markdown converter."""
+"""Command line interface for PDF to Markdown conversion."""
 
 import sys
 from pathlib import Path
-from typing import Optional
 
 import click
 
@@ -11,79 +10,73 @@ from .converter import PDFToMarkdownConverter
 
 @click.command()
 @click.argument('pdf_path', type=click.Path(exists=True, dir_okay=False, path_type=Path))
-@click.option(
-    '--output', '-o',
-    type=click.Path(path_type=Path),
-    help='Output Markdown file path (default: PDF path with .md suffix)'
-)
-@click.option(
-    '--languages', '-l',
-    type=str,
-    default='en',
-    help='OCR languages (comma-separated, default: en)'
-)
-@click.option(
-    '--verbose', '-v',
-    is_flag=True,
-    help='Enable verbose output'
-)
-def main(pdf_path: Path, output: Optional[Path], languages: str, verbose: bool) -> None:
-    """Convert PDF file to Markdown using Docling with EasyOCR.
+@click.option('--verbose', '-v', is_flag=True, help='Enable verbose output')
+@click.option('--disable-logging', is_flag=True, help='Disable JSON processing details logging')
+def main(pdf_path: Path, verbose: bool, disable_logging: bool) -> None:
+    """
+    Convert a PDF file to Markdown using Docling with EasyOCR.
     
-    PDF_PATH: Path to the PDF file to convert
+    PDF_PATH: Path to the PDF file to convert. The resulting Markdown file
+    will be saved in the same directory with a .md suffix added to the original filename.
+    By default, also creates a JSON file with processing details.
     
-    Examples:
+    Example:
         pdf-to-md document.pdf
-        pdf-to-md document.pdf -o output.md
-        pdf-to-md document.pdf --languages en,fr,de
+        # Creates document.pdf.md and document.json in the same directory
+        
+        pdf-to-md document.pdf --disable-logging
+        # Creates only document.pdf.md (no JSON log)
     """
     try:
-        # Parse OCR languages
-        ocr_languages = [lang.strip() for lang in languages.split(',') if lang.strip()]
-        
         if verbose:
-            click.echo(f"Input PDF: {pdf_path}")
-            click.echo(f"OCR Languages: {', '.join(ocr_languages)}")
+            click.echo(f"Converting PDF: {pdf_path}")
         
-        # Initialize converter
+        # Capture command line for logging
+        command_line = f"pdf-to-md {pdf_path}"
         if verbose:
-            click.echo("Initializing PDF to Markdown converter...")
+            command_line += " --verbose"
+        if disable_logging:
+            command_line += " --disable-logging"
         
-        converter = PDFToMarkdownConverter(ocr_languages=ocr_languages)
+        # Initialize converter with logging preference
+        enable_logging = not disable_logging
+        converter = PDFToMarkdownConverter(enable_logging=enable_logging)
         
         # Convert and save
-        if verbose:
-            click.echo("Converting PDF to Markdown...")
+        output_path = converter.convert_and_save(
+            pdf_path=pdf_path,
+            verbose=verbose,
+            command_line=command_line
+        )
         
-        output_path = converter.convert_and_save(pdf_path, output)
+        # Report success
+        click.echo(f"✅ Successfully converted PDF to Markdown: {output_path}")
         
-        # Success message
-        click.echo(f"✅ Successfully converted PDF to Markdown")
-        click.echo(f"📄 Input: {pdf_path}")
-        click.echo(f"📝 Output: {output_path}")
-        
-        if verbose:
-            # Show file sizes
-            input_size = pdf_path.stat().st_size
-            output_size = output_path.stat().st_size
-            click.echo(f"📊 Input size: {input_size:,} bytes")
-            click.echo(f"📊 Output size: {output_size:,} bytes")
+        if enable_logging:
+            json_path = pdf_path.with_suffix('.json')
+            click.echo(f"📊 Processing details saved to: {json_path}")
         
     except FileNotFoundError as e:
         click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)
-    except PermissionError as e:
-        click.echo(f"❌ Permission Error: {e}", err=True)
-        sys.exit(1)
+        
     except ValueError as e:
-        click.echo(f"❌ Validation Error: {e}", err=True)
+        click.echo(f"❌ Error: {e}", err=True)
         sys.exit(1)
+        
+    except RuntimeError as e:
+        click.echo(f"❌ Conversion failed: {e}", err=True)
+        sys.exit(1)
+        
+    except OSError as e:
+        click.echo(f"❌ File write error: {e}", err=True)
+        sys.exit(1)
+        
     except Exception as e:
-        click.echo(f"❌ Conversion Error: {e}", err=True)
+        click.echo(f"❌ Unexpected error: {e}", err=True)
         if verbose:
             import traceback
-            click.echo("Full traceback:", err=True)
-            click.echo(traceback.format_exc(), err=True)
+            traceback.print_exc()
         sys.exit(1)
 
 

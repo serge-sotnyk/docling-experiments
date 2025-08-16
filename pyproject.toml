@@ -9,3 +9,6 @@ dependencies = [
     "docling>=2.44.0",
     "easyocr>=1.7.1",
 ]
+
+[project.scripts]
+pdf-to-md = "src.pdf_to_markdown.cli:main"
