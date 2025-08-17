@@ -26,6 +26,8 @@ cd docling-experiments
 # Install dependencies
 uv sync
 ```
+If you use Windows and don't have Visual Studio Build Tools you may need to install
+Visual C++ Redistributables from https://aka.ms/vs/17/release/vc_redist.x64.exe
 
 ## Usage
 
